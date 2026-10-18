@@ -1,0 +1,997 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Regret</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Manrope:wght@400;600;800&display=swap">
+<style>
+/* Layout: papan 2 pemain. Lawan di atas (kartu utama di kanan), kamu di bawah (kartu utama di kiri),
+   artefak kiri = milikmu, kanan = lawan, dua slot Defend bertumpuk di tengah. */
+:root{
+  color-scheme:dark;
+  --bg:#0c1517; --felt:#122326; --felt2:#193136; --line:#2b4a4f;
+  --fg:#e9eee8; --mute:#8ea8a5; --brass:#dba944; --brass-ink:#1c1604;
+  --paper:#eef0e8; --ink:#141a1b; --paper-mute:#7b8582;
+  --buff:#3fa26c; --atk:#d4503f; --def:#4a84d4; --good:#5fd08a; --bad:#ff7a66;
+  --back1:#1d3a3f; --back2:#2a5258;
+  --f-disp:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
+  --f-body:'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:auto}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--f-body);
+  padding-block:10px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+button:disabled{cursor:not-allowed;opacity:.45}
+#app{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.disp{font-family:var(--f-disp);letter-spacing:.02em}
+
+/* ---- menu ---- */
+.menu{display:grid;gap:22px;padding:28px 0;max-width:560px;margin:0 auto;width:100%}
+.menu h1{font:900 clamp(64px,18vw,120px)/.85 var(--f-disp);margin:0;letter-spacing:.01em}
+.menu h1 span{color:var(--brass)}
+.menu p{color:var(--mute);margin:0;max-width:46ch}
+.menu .names{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.menu label{display:grid;gap:4px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+.menu input{background:var(--felt);border:1px solid var(--line);color:var(--fg);padding:10px 12px;border-radius:6px;font:inherit;min-width:0}
+.btn{background:var(--felt2);border:1px solid var(--line);padding:11px 16px;border-radius:6px;font-weight:800;letter-spacing:.02em}
+.btn:hover:not(:disabled){border-color:var(--brass)}
+.btn.pri{background:var(--brass);border-color:var(--brass);color:var(--brass-ink)}
+.btn.warn{background:var(--atk);border-color:var(--atk);color:#fff}
+.btn.sm{padding:6px 10px;font-size:12px}
+.stack{display:grid;gap:10px}
+
+/* ---- top bar ---- */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.top .t{font:900 28px/1 var(--f-disp)}
+.top .t span{color:var(--brass)}
+.top .r{display:flex;gap:8px}
+
+/* ---- player bars ---- */
+.pbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13px}
+.pbar .nm{font:800 20px/1 var(--f-disp);letter-spacing:.03em}
+.pbar .nm.turn{color:var(--brass)}
+.pips{display:flex;gap:3px}
+.pips i{width:12px;height:12px;border-radius:2px;border:1px solid var(--line);background:transparent}
+.pips i.on{background:var(--brass);border-color:var(--brass)}
+.stat{color:var(--mute)}
+.stat b{color:var(--fg);font-variant-numeric:tabular-nums}
+.stat.coin b{color:var(--brass)}
+
+/* ---- card rows ---- */
+.row{display:grid;grid-template-columns:repeat(8,1fr);gap:clamp(3px,.8vw,10px);container-type:inline-size}
+.row.rev{direction:rtl}
+.row>*{direction:ltr}
+.card{aspect-ratio:5/7;border-radius:7px;position:relative;display:grid;place-items:center;background:var(--paper);color:var(--ink);
+  border:1px solid #c9cdc2;box-shadow:0 2px 0 rgba(0,0,0,.35);min-width:0}
+.card .big{font:900 6cqw/1 var(--f-disp);font-variant-numeric:tabular-nums}
+.card .cn{position:absolute;top:5%;left:8%;font:800 2.3cqw/1 var(--f-disp)}
+.card .cn.br{top:auto;bottom:4%;left:auto;right:7%;transform:rotate(180deg)}
+.card.star .big{color:#b5851d}
+.card.back{background:repeating-linear-gradient(135deg,var(--back1) 0 6px,var(--back2) 6px 12px);border-color:var(--brass);color:var(--brass)}
+.card.back .big{font-size:5cqw;opacity:.85}
+.card.empty{background:transparent;border:1px dashed var(--line);box-shadow:none}
+.tag{position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);background:var(--brass);color:var(--brass-ink);
+  font:800 clamp(6px,1.1cqw,10px)/1 var(--f-body);letter-spacing:.06em;padding:2px 5px;border-radius:3px 3px 0 0;text-transform:uppercase;white-space:nowrap}
+.card.seen::after{content:"";position:absolute;inset:3px;border:2px solid var(--atk);border-radius:5px;pointer-events:none}
+
+/* ---- middle ---- */
+.mid{display:grid;grid-template-columns:1fr minmax(150px,200px) 1fr;gap:12px;align-items:stretch}
+.arts{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:center;min-width:0}
+.art{border:1px solid var(--line);background:var(--felt);border-radius:8px;padding:8px;display:grid;gap:4px;align-content:start;min-height:132px;min-width:0}
+.art.empty{border-style:dashed;background:transparent;color:var(--mute)}
+.art .kind{display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.dot.P{background:var(--atk)}.dot.A{background:var(--def)}
+.art b{font:800 16px/1.05 var(--f-disp);letter-spacing:.02em}
+.art small{color:var(--mute);font-size:11px;line-height:1.3}
+.art .left{font-size:11px;color:var(--brass);font-weight:800}
+.center{display:grid;gap:8px;align-content:center;justify-items:stretch}
+.dslot{min-height:96px;border-radius:8px;border:1px dashed var(--line);display:grid;place-items:center;text-align:center;padding:6px;color:var(--mute);font-size:11px;position:relative}
+.dslot.on{border-style:solid;color:#fff}
+.dslot.shield{background:#2d5da0;border-color:#7fb0f2}
+.dslot.mirror{background:#3b6fa6;border-color:#a9d3ff}
+.dslot.crack{background:#3a4f9a;border-color:#8ea2ee}
+.dslot b{font:800 18px/1 var(--f-disp);display:block}
+.dslot small{display:block;font-size:10.5px;line-height:1.25;margin-top:3px;opacity:.92}
+.dslot svg{width:22px;height:22px;fill:currentColor;display:block;margin:0 auto 2px}
+.hud{text-align:center;display:grid;gap:4px;font-size:12px;color:var(--mute)}
+.hud .rn{font:900 26px/1 var(--f-disp);color:var(--fg)}
+.clearpips{display:flex;gap:5px;justify-content:center}
+.clearpips i{width:26px;height:8px;border-radius:2px;background:var(--line)}
+.clearpips i.on{background:var(--brass)}
+.clearpips i.on.last{background:var(--atk)}
+.banner{background:var(--brass);color:var(--brass-ink);font-weight:800;padding:4px 8px;border-radius:5px;font-size:12px}
+
+/* ---- my controls ---- */
+.ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ctrl .btn{min-width:130px}
+.clearbtn.third{background:var(--atk);border-color:var(--atk);color:#fff}
+.sum{margin-left:auto;display:flex;gap:16px;align-items:baseline;font-size:13px;color:var(--mute)}
+.sum b{font:900 28px/1 var(--f-disp);color:var(--fg);font-variant-numeric:tabular-nums}
+.sum .near b{color:var(--good)}.sum .far b{color:var(--bad)}
+
+/* ---- hand ---- */
+.hand{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;min-height:150px;align-items:flex-start;scrollbar-width:thin}
+.hand .none{color:var(--mute);align-self:center}
+.sp{flex:0 0 156px;border-radius:8px;border:2px solid;background:var(--felt);text-align:left;padding:0;display:grid;grid-template-rows:auto auto;position:relative;color:var(--fg)}
+.sp .hd{border-radius:5px 5px 0 0;display:flex;align-items:center;gap:5px;padding:5px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#fff}
+.sp .hd svg{width:14px;height:14px;fill:currentColor}
+.sp .hd .spd{margin-left:auto;font:900 15px/1 var(--f-disp);letter-spacing:.02em}
+.sp .bd{padding:7px 8px 9px;display:grid;gap:4px;align-content:start}
+.sp .bd b{font:800 17px/1 var(--f-disp);letter-spacing:.02em}
+.sp .bd small{color:var(--fg);opacity:.82;font-size:11.5px;line-height:1.35}
+.sp.buff{border-color:var(--buff)}.sp.buff .hd{background:var(--buff)}
+.sp.attack{border-color:var(--atk)}.sp.attack .hd{background:var(--atk)}
+.sp.defend{border-color:var(--def)}.sp.defend .hd{background:var(--def)}
+.sp:hover:not(:disabled){transform:translateY(-3px)}
+.sp:disabled{opacity:.88;color:var(--fg)}
+
+/* ---- log ---- */
+.log{border:1px solid var(--line);border-radius:8px;background:var(--felt);padding:8px 12px;max-height:150px;overflow-y:auto;font-size:12.5px;display:flex;flex-direction:column-reverse;gap:2px}
+.log div{color:var(--mute)}.log div:first-child{color:var(--fg)}
+.log div.hi{color:var(--brass)}
+
+/* ---- modal ---- */
+.ov{position:fixed;inset:0;background:rgba(5,10,11,.72);display:grid;place-items:center;z-index:50;padding:16px}
+.ov.opaque{background:var(--bg)}
+.mod{background:var(--felt2);border:1px solid var(--line);border-radius:10px;padding:18px;max-width:520px;width:100%;max-height:88vh;overflow:auto;display:grid;gap:12px}
+.mod h3{margin:0;font:900 28px/1 var(--f-disp);letter-spacing:.02em}
+.mod .mb{color:var(--mute);font-size:13.5px;display:grid;gap:4px}
+.mod .mb b{color:var(--fg)}
+.opts{display:grid;gap:8px}
+.opts.grid{grid-template-columns:repeat(auto-fill,minmax(52px,1fr))}
+.opt{background:var(--felt);border:1px solid var(--line);border-radius:6px;padding:10px 12px;text-align:left;display:grid;gap:2px}
+.opt:hover:not(:disabled){border-color:var(--brass)}
+.opt b{font-weight:800}.opt small{color:var(--mute);font-size:12px}
+.opts.grid .opt{text-align:center;font:800 20px/1 var(--f-disp);padding:12px 0}
+.mod .win{color:var(--brass);font:900 22px/1.1 var(--f-disp)}
+
+/* ---- guide ---- */
+.guide{position:fixed;inset:0;z-index:60;background:var(--bg);overflow:auto;padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.guide .in{max-width:980px;margin:0 auto;display:grid;gap:16px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{background:transparent;border:1px solid var(--line);padding:8px 14px;border-radius:6px;font-weight:800}
+.tabs button[aria-pressed=true]{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+.gsec h2{font:900 30px/1 var(--f-disp);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.gsec.buff h2{color:var(--buff)}.gsec.attack h2{color:var(--atk)}.gsec.defend h2{color:var(--def)}
+.gsec h2 svg{width:22px;height:22px;fill:currentColor}
+.gsec .note{color:var(--mute);margin:0 0 10px;font-size:13px}
+.gcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.gc{border:1px solid var(--line);border-left-width:4px;border-radius:6px;padding:10px 12px;background:var(--felt);display:grid;gap:4px;min-width:0}
+.gsec.buff .gc{border-left-color:var(--buff)}.gsec.attack .gc{border-left-color:var(--atk)}.gsec.defend .gc{border-left-color:var(--def)}
+.gc .h{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.gc b{font:800 19px/1 var(--f-disp);letter-spacing:.02em}
+.gc .pc{font:800 13px var(--f-disp);color:var(--brass);white-space:nowrap}
+.gc p{margin:0;font-size:12.5px;color:var(--fg)}
+.gc small{color:var(--mute);font-size:11.5px}
+.rules{display:grid;gap:8px;max-width:70ch}
+.rules h3{font:900 22px/1 var(--f-disp);margin:10px 0 0;color:var(--brass)}
+.rules p,.rules li{margin:0;color:var(--fg);font-size:13.5px}
+.rules ul{margin:0;padding-left:18px;display:grid;gap:3px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:12.5px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:11px}
+.ok{color:var(--good);font-weight:800}.soon{color:var(--mute)}
+
+.hwrap{position:relative;width:min(92vw,900px)}
+.hrow{display:grid;grid-template-columns:repeat(8,1fr);gap:8px}
+.hc{aspect-ratio:5/7;perspective:700px;position:relative}
+.hc .in{position:absolute;inset:0;transform-style:preserve-3d;animation:cflip .5s calc(.45s + var(--i)*.27s) both}
+.hf{position:absolute;inset:0;border-radius:7px;display:grid;place-items:center;backface-visibility:hidden;font:900 clamp(18px,5vw,44px) var(--f-disp)}
+.hf.front{background:var(--paper);color:var(--ink)}
+.hf.back{background:repeating-linear-gradient(135deg,var(--back1) 0 6px,var(--back2) 6px 12px);border:1px solid var(--brass);color:var(--brass);transform:rotateY(180deg)}
+@keyframes cflip{to{transform:rotateY(180deg)}}
+.hat{position:absolute;top:-92px;width:clamp(70px,12vw,110px);left:-14%;animation:hatpass 2.7s .2s cubic-bezier(.45,.1,.4,1) both;z-index:2;filter:drop-shadow(0 8px 6px rgba(0,0,0,.5))}
+@keyframes hatpass{0%{left:-14%;transform:rotate(-8deg)}50%{transform:rotate(6deg)}100%{left:102%;transform:rotate(-4deg)}}
+.bwrap{position:relative;width:340px;height:330px}
+.balloon{position:absolute;left:50%;top:40px;width:120px;height:150px;margin-left:-60px;border-radius:50% 50% 47% 47%;background:radial-gradient(circle at 35% 30%,#ff9d8c,#d4503f 58%,#8e2216);animation:brise 1.1s ease-out both,bpop .22s 1.15s forwards;transform-origin:50% 60%}
+.balloon::before{content:"";position:absolute;bottom:-9px;left:50%;margin-left:-8px;border:8px solid transparent;border-bottom-color:#8e2216;border-top:0}
+.balloon::after{content:"";position:absolute;top:100%;left:50%;width:2px;height:90px;background:var(--mute)}
+@keyframes brise{from{transform:translateY(170px) scale(.5)}60%{transform:translateY(-8px) rotate(4deg) scale(1)}to{transform:translateY(0) rotate(-3deg) scale(1.04)}}
+@keyframes bpop{0%{transform:scale(1.04)}35%{transform:scale(1.4)}100%{transform:scale(1.7);opacity:0}}
+.shard{position:absolute;left:50%;top:115px;width:10px;height:22px;margin-left:-5px;background:#e5604d;opacity:0;transform-origin:50% 100%;animation:shard .7s 1.17s ease-out both}
+@keyframes shard{0%{opacity:1;transform:rotate(var(--a)) translateY(-20px)}100%{opacity:0;transform:rotate(var(--a)) translateY(-150px)}}
+.pcard{position:absolute;left:50%;top:70px;width:84px;aspect-ratio:5/7;margin-left:-42px;background:var(--paper);color:var(--ink);border-radius:7px;display:grid;place-items:center;font:900 40px var(--f-disp);opacity:0;animation:cpop 1.2s calc(1.2s + var(--i)*.12s) cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes cpop{0%{opacity:0;transform:scale(.2)}35%{opacity:1;transform:translate(calc((var(--i) - .5)*190px),-30px) rotate(calc((var(--i) - .5)*18deg)) scale(1.1)}100%{opacity:1;transform:translate(calc((var(--i) - .5)*190px),130px) rotate(calc((var(--i) - .5)*10deg)) scale(1)}}
+.clk{position:relative;width:240px;height:240px;border:6px solid var(--brass);border-radius:50%;background:radial-gradient(#241c07,#0f0c06);animation:boxin .35s ease-out}
+.clk .tk{position:absolute;left:50%;top:6px;width:3px;height:12px;margin-left:-1.5px;background:var(--brass);transform-origin:50% 108px}
+.clk .hnd{position:absolute;left:50%;bottom:50%;border-radius:3px;transform-origin:50% 100%}
+.clk .hm{width:5px;height:92px;margin-left:-2.5px;background:var(--fg);animation:cspin 2.6s cubic-bezier(.15,.7,.2,1) both}
+.clk .hh{width:7px;height:62px;margin-left:-3.5px;background:var(--brass);animation:cspin2 2.6s cubic-bezier(.15,.7,.2,1) both}
+.clk::after{content:"";position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px;border-radius:50%;background:var(--atk)}
+.clk .ring{position:absolute;inset:-6px;border-radius:50%;border:3px solid var(--brass);animation:ring 1.1s infinite}
+@keyframes cspin{to{transform:rotate(2520deg)}}
+@keyframes cspin2{to{transform:rotate(210deg)}}
+@keyframes ring{from{transform:scale(1);opacity:.7}to{transform:scale(1.5);opacity:0}}
+.die{position:relative;width:150px;height:150px;animation:tumble 1.55s cubic-bezier(.3,.6,.4,1) both}
+.die .sh{position:absolute;inset:0;background:linear-gradient(145deg,#f4f0e2,#b9b196);clip-path:polygon(50% 0,94% 25%,94% 75%,50% 100%,6% 75%,6% 25%)}
+.die svg{position:absolute;inset:0;width:100%;height:100%}
+.die b{position:absolute;inset:0;display:grid;place-items:center;font:900 56px var(--f-disp);color:var(--ink)}
+.die.land{animation:land .45s ease-out both}
+@keyframes tumble{0%{transform:translateY(-240px) rotate(0)}30%{transform:translateY(0) rotate(260deg)}45%{transform:translateY(-80px) rotate(360deg)}62%{transform:translateY(0) rotate(520deg)}75%{transform:translateY(-26px) rotate(620deg)}100%{transform:translateY(0) rotate(720deg)}}
+@keyframes land{0%{transform:scale(1.3)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.hat,.hc .in,.balloon,.shard,.pcard,.clk .hnd,.die{animation-duration:.01s!important;animation-delay:0s!important}}
+.peek{display:flex;gap:8px;margin:8px 0 2px}
+.pk{width:58px;aspect-ratio:5/7;background:var(--paper);color:var(--ink);border-radius:6px;display:grid;place-items:center;font:900 28px var(--f-disp)}
+.betbox{border:2px solid var(--brass);border-radius:8px;background:linear-gradient(#241c07,#13100a);padding:8px;display:grid;gap:6px;text-align:center;margin-top:4px}
+.betbox .bt{font:900 15px/1 var(--f-disp);letter-spacing:.12em;color:var(--brass);text-transform:uppercase}
+.betbox small{font-size:10.5px;color:var(--mute);line-height:1.3}
+.bc{display:flex;gap:4px;justify-content:center;flex-wrap:wrap}
+.mc{width:28px;height:38px;border-radius:4px;display:grid;place-items:center;color:#fff;border:1px solid rgba(255,255,255,.35)}
+.mc svg{width:14px;height:14px;fill:currentColor}
+.mc.buff{background:var(--buff)}.mc.attack{background:var(--atk)}.mc.defend{background:var(--def)}
+.betbox.fresh .mc{animation:drop .6s cubic-bezier(.3,1.4,.5,1) calc(var(--i)*.09s) both}
+@keyframes drop{from{transform:translateY(-46px) scale(1.5);opacity:0}to{transform:none;opacity:1}}
+#fx{position:fixed;inset:0;z-index:70;background:rgba(5,10,11,.82);display:grid;place-items:center;pointer-events:none;overflow:hidden}
+.fxbox{position:relative;width:210px;height:130px;border:3px solid var(--brass);border-radius:6px;background:linear-gradient(#2a2108,#14100a);display:grid;place-items:end center;padding-bottom:12px;color:var(--brass);font:900 19px var(--f-disp);letter-spacing:.12em;z-index:2;animation:boxin .4s ease-out}
+.fxbox .lid{position:absolute;top:-18px;left:-8px;right:-8px;height:18px;background:var(--brass);border-radius:4px;transform-origin:left bottom;animation:lid 2.6s forwards}
+@keyframes boxin{from{transform:scale(.6);opacity:0}}
+@keyframes lid{0%,10%{transform:rotate(-32deg)}72%{transform:rotate(-32deg)}100%{transform:rotate(0)}}
+.fxc{position:absolute;left:50%;top:50%;width:94px;height:124px;margin:-62px 0 0 -47px;border:2px solid;border-radius:8px;background:var(--felt2);display:grid;place-content:center;gap:4px;text-align:center;padding:6px;z-index:3;
+  animation:fly 1.7s cubic-bezier(.5,0,.3,1) calc(var(--i)*.2s + .35s) both}
+.fxc i{font:800 10px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;font-style:normal;opacity:.8}
+.fxc b{font:800 17px/1.05 var(--f-disp)}
+.fxc.buff{border-color:var(--buff)}.fxc.attack{border-color:var(--atk)}.fxc.defend{border-color:var(--def)}
+.fxc.b{--sy:46vh}.fxc.t{--sy:-46vh}
+@keyframes fly{0%{transform:translate(var(--dx),var(--sy)) rotate(-8deg);opacity:0}15%{opacity:1}65%{transform:translate(0,-34px) rotate(0) scale(.95);opacity:1}100%{transform:translate(0,8px) scale(.22);opacity:0}}
+.fxt{position:absolute;bottom:14%;left:0;right:0;text-align:center;font:800 20px var(--f-disp);letter-spacing:.04em;color:var(--fg);padding:0 16px}
+@media (prefers-reduced-motion:reduce){.fxc,.fxbox,.fxbox .lid{animation-duration:.01s!important}}
+#toast{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--atk);color:#fff;padding:9px 14px;border-radius:6px;font-weight:700;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;text-align:center}
+#toast.on{opacity:1}
+
+@media (max-width:720px){
+  .mid{grid-template-columns:1fr 1fr;grid-template-areas:"c c" "a b"}
+  .mid .center{grid-area:c;grid-template-columns:1fr 1fr 1fr;align-items:center}
+  .mid .center .hud{order:0}
+  .mid .center .dslot{min-height:74px}
+  .arts{grid-template-columns:1fr 1fr}
+  .art{min-height:110px}
+  .sum{margin-left:0;width:100%}
+  .ctrl .btn{flex:1;min-width:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-buff" viewBox="0 0 24 24"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"/></symbol>
+  <symbol id="i-atk" viewBox="0 0 24 24"><path d="M15 2l7 7-10 11-3-3L15 2zM8 16l-4 5 1 1 5-4z"/></symbol>
+  <symbol id="i-def" viewBox="0 0 24 24"><path d="M12 2l8 3v7c0 5-4 8.500-8 10-4-1.500-8-5-8-10V5z"/></symbol>
+</svg>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+
+<script>
+/* =====================================================================
+   DATA — semua angka ada di sini supaya mudah diubah setelah simulasi
+   ===================================================================== */
+const CFG={
+  target:21, win:8, slots:8, price:100, every:3, deal:5, sudden:10, dbl:0.25,
+  catW:{buff:40,attack:35,defend:25},
+  atkSpd:[28,157], crackSpd:[56,129], spdBuff:[23,147], coins:[50,100],
+  cards:{
+    buff:[
+      {key:'minus',name:'Minus',p:15,dbl:1,d:'Buang kartu nomor terbaru milikmu, termasuk kartu utama jika itu yang terbaru.',d2:'Buang 2 kartu nomor terbaru milikmu.'},
+      {key:'pick',name:'Pick Trash',p:10,dbl:1,d:'Pilih 1 kartu nomor milikmu untuk dibuang.',d2:'Pilih 2 kartu nomor milikmu untuk dibuang.'},
+      {key:'recycle',name:'Recycle',p:10,d:'Buang kartu nomor terbaru milikmu dan dapat 1 kartu spesial.'},
+      {key:'restartSelf',name:'Restart',p:5,d:'Buang semua kartu nomor milikmu, termasuk kartu utama.'},
+      {key:'speed',name:'Speed',p:20,d:'Angka acak 23–147. Langsung hangus saat dipakai dan menaikkan speed semua Attack dan Shield Crack milikmu (termasuk yang datang kemudian). Bertumpuk, hilang di akhir ronde.'},
+      {key:'coin',name:'Coin',p:25,d:'Koin 50 atau 100, langsung menjadi saldo.'},
+      {key:'giveme',name:'Give Me',p:15,d:'Pilih angka 1–18 yang tertulis di kartu, lalu ambil dari draw pile. Jika angka tidak ada di draw pile, kartu hangus.'}
+    ],
+    attack:[
+      {key:'giveyou',name:'Give You',p:20,dbl:1,d:'Kasih musuh 1 kartu nomor dari deck.',d2:'Kasih musuh 2 kartu nomor dari deck.'},
+      {key:'forme',name:'For Me',p:15,d:'Ambil kartu nomor terakhir yang ditaruh musuh.'},
+      {key:'foryou',name:'For You',p:15,d:'Serahkan kartu nomor terakhir milikmu ke musuh.'},
+      {key:'jealous',name:'Jealous',p:10,dbl:1,d:'Buang kartu nomor terbaru milik musuh, termasuk kartu utama jika itu yang terbaru.',d2:'Buang 2 kartu nomor terbaru milik musuh.'},
+      {key:'open',name:'Open Card',p:10,d:'Buka kartu utama musuh.'},
+      {key:'party',name:'Party',p:10,d:'Isi semua slot kartu nomor musuh sampai penuh.'},
+      {key:'restartEnemy',name:'Restart Musuh',p:5,d:'Hapus semua kartu nomor musuh, termasuk kartu utama.'},
+      {key:'axe',name:'Axe',p:15,d:'Hancurkan kartu Defend musuh. Melawan Shield Crack, speed Axe harus lebih tinggi.'}
+    ],
+    defend:[
+      {key:'shield',name:'Shield',p:40,d:'Kebal semua serangan. Counter: Axe. Tanpa speed.'},
+      {key:'mirror',name:'Mirror',p:20,d:'Memantulkan serangan. Setelah memantulkan, 50% kartu bertahan. Counter: Axe (efek tidak dipantulkan). Tanpa speed.'},
+      {key:'crack',name:'Shield Crack',p:40,d:'Menahan serangan yang speed-nya lebih rendah atau sama. Hanya speed lebih tinggi yang menembus.'}
+    ]
+  }
+};
+const CAT_LABEL={buff:'Buff',attack:'Attack',defend:'Defend'};
+const CAT_NOTE={
+  buff:'Kartu penguat diri. Hijau, lambang plus. Bobot kemunculan 40%.',
+  attack:'Kartu serangan. Merah, lambang pisau, speed acak 28–157 di kiri atas. Bobot 35%.',
+  defend:'Kartu pertahanan. Biru, lambang tameng. Hanya 1 slot Defend; harus dipasang di giliran sendiri sebelum diserang, bertahan sampai akhir ronde atau dihancurkan Axe. Bobot 25%.'
+};
+const ARTS={
+  antique:{name:'Antique Shield',type:'P',dur:2,impl:1,d:'Kebal serangan. Butuh speed di atas 200 untuk menembus.'},
+  ballon:{name:'Ballon',type:'H',dur:3,impl:1,d:'Saat kamu diserang, ada peluang 40% balon meletus dan penyerang menerima 2 kartu nomor. Maksimal 3x meletus per ronde. Serangan yang diblokir Antique Shield tidak memicunya.'},
+  boxing:{name:'Boxing Gloves',type:'A',dur:3,impl:1,d:'Dipasang dulu, memantulkan 3 serangan musuh berikutnya (reset tiap ronde).'},
+  buffTal:{name:'Buff Talisman',type:'P',dur:3,impl:1,d:'Awal ronde, musuh memberi 3 kartu Buff dari tangannya.'},
+  deluxe:{name:'Deluxe Button',type:'P',dur:3,d:'Saat diserang +10 speed, maks 3x (30).'},
+  diamondAxe:{name:'Diamond Axe',type:'A',dur:2,impl:1,d:'Hancurkan kartu Defend musuh (3x per ronde). Menembus Antique Shield dan tidak bisa ditahan.'},
+  emerald:{name:'Emerald of Harmony',type:'H',dur:2,d:'Semua pemain tidak bisa menyerang, artefak lain dibekukan.'},
+  fauna:{name:'Fauna Scissors',type:'P',dur:3,d:'Kartu nomor kita berubah karena musuh, dapat kartu spesial (3x).'},
+  cheese:{name:'Fermented Cheese',type:'P',dur:3,d:'Saat diserang, ambil kartu serangannya (3x).'},
+  goldenWood:{name:'Golden Wood',type:'P',dur:3,d:'+70 speed ke 3 kartu spesial pilihan, permanen.'},
+  huntTal:{name:'Hunt Talisman',type:'P',dur:3,d:'Awal ronde, musuh memberi 3 kartu Attack.'},
+  infected:{name:'Infected Anvil',type:'H',dur:2,d:'Memberi enchant ke artefak di slot lain.'},
+  keris:{name:'Keris of Moon',type:'P',dur:3,d:'Saat diserang, 50% membalikkan serangan, tanpa batas.'},
+  magicHat:{name:'Magic Hat',type:'P',dur:2,impl:1,d:'Menyembunyikan semua kartu nomor sendiri sampai penentuan pemenang.'},
+  meatCube:{name:'Meat Cube',type:'A',dur:2,impl:1,d:'Lempar dadu d18, musuh menerima kartu nomor sesuai angka itu (2x per ronde). Batal jika angka tidak ada di draw pile.'},
+  mElation:{name:'Mirror of Elation',type:'A',dur:2,d:'Tebak ganjil atau genap kartu utama musuh: benar menang, salah kalah.'},
+  mHunt:{name:'Mirror of Hunt',type:'A',dur:3,impl:1,d:'Tahap akhir: tebak angka kartu utama musuh. Benar menang, salah tidak ada hukuman.'},
+  ocean:{name:'Ocean Glasses',type:'A',dur:2,impl:1,d:'Lihat 3 kartu nomor berikutnya di deck (2x per ronde).'},
+  parasite:{name:'Parasite Cube',type:'H',dur:3,impl:1,d:'Kedua pemain dipaksa menaruh kartu spesial ke dalam kotak (maks 3 tiap pemain). Pemenang ronde menentukan siapa yang mengambilnya. Sekali per ronde.'},
+  pure:{name:'Pure Anvil',type:'H',dur:0,d:'Tambah durasi artefak lain +2 ronde (sekali).'},
+  sacri:{name:'Sacrificial Scissors',type:'P',dur:2,d:'Kartu musuh bertambah, dapat kartu spesial (4x per ronde).'},
+  scaly:{name:'Scaly Scissors',type:'P',dur:2,d:'Kartu musuh berkurang, dapat kartu spesial (4x per ronde).'},
+  strengthTal:{name:'Strength Talisman',type:'P',dur:3,d:'Awal ronde, musuh memberi 3 kartu Defend.'},
+  eight:{name:'The 8 Ball',type:'P',dur:3,impl:1,d:'Kartu angka di atas 8 yang masuk slot memberi 1 kartu spesial (4x per ronde).'},
+  thief:{name:'Thief Clock',type:'A',dur:2,impl:1,d:'Setelah Clear ketiga, kamu dapat 2 langkah. Tiap aksi atau Clear mengurangi 1 langkah. Musuh tidak bisa merespons.'},
+  trashGloves:{name:'Trash Gloves',type:'A',dur:2,impl:1,d:'Pilih 1 kartu nomor milikmu untuk dibuang (3x per ronde).'},
+  trashShoes:{name:'Trash Shoes',type:'P',dur:3,impl:1,d:'+60 speed ke semua kartu Attack, Shield Crack, dan Speed buff.'}
+};
+
+/* =====================================================================
+   UTIL
+   ===================================================================== */
+const $=s=>document.querySelector(s);
+const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=rnd(0,i);[a[i],a[j]]=[a[j],a[i]]}return a};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function pickW(list){let t=list.reduce((s,x)=>s+x[1],0),r=Math.random()*t;for(const [it,w] of list){if((r-=w)<0)return it}return list[list.length-1][0]}
+let toastT;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),1800)}
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+let G=null, GID=0, GUIDE=null, UID=1;
+let NAMES=['Pemain 1','Pemain 2'];
+
+function mkP(name,bot){return{name,bot,slots:[],hand:[],defend:null,art:{P:null,A:null},coins:0,score:0,use:{},speedBonus:0,glovesLeft:0,glovesUsed:false,eightUses:0}}
+function newGame(mode){
+  GID++;
+  const n1=(NAMES[0]||'Pemain 1').trim()||'Pemain 1';
+  const n2=mode==='bot'?'Bot':((NAMES[1]||'Pemain 2').trim()||'Pemain 2');
+  G={mode,round:0,p:[mkP(n1,false),mkP(n2,mode==='bot')],deck:[],discard:[],cur:0,view:0,clear:0,phase:'idle',seq:0,
+     reveal:false,locked:true,busy:false,thief:null,log:[],starter:Math.random()<.5?0:1,sudden:false,pendingSudden:false,
+     turnCount:0,over:false,bet:null,fxq:[],modal:null,turnOver:false,endTurn:null};
+  render();
+  playGame(GID);
+}
+const L=(t,hi)=>{G.log.unshift({t,hi});if(G.log.length>80)G.log.pop();};
+const total=p=>p.slots.reduce((s,c)=>s+c.v,0);
+const dist=p=>Math.abs(CFG.target-total(p));
+const stars=p=>p.slots.filter(c=>c.star).length;
+const hasArt=(pi,id)=>{const a=G.p[pi].art;return !!((a.P&&a.P.id===id&&a.P.left>0)||(a.A&&a.A.id===id&&a.A.left>0))};
+const effSpeed=(pi,base)=>base+G.p[pi].speedBonus+(hasArt(pi,'trashShoes')?60:0);
+const newest=pi=>G.p[pi].slots.reduce((b,c)=>(!b||c.seq>b.seq)?c:b,null);
+const sName=c=>c.name+(c.n===2?' ×2':'');
+
+/* =====================================================================
+   DECK & CARDS
+   ===================================================================== */
+function buildDeck(){
+  const d=[];for(let v=1;v<=18;v++)d.push({v,star:false});
+  for(let i=0;i<3;i++)d.push({v:0,star:true});
+  return shuffle(d);
+}
+function drawDeck(){
+  if(!G.deck.length&&G.discard.length){G.deck=shuffle(G.discard);G.discard=[];L('Discard pile dikocok menjadi deck baru.')}
+  const c=G.deck.pop()||null;if(c){c.hidden=false;c.revealed=false}return c;
+}
+function addCard(pi,c){
+  const p=G.p[pi];if(p.slots.length>=CFG.slots)return false;
+  c.seq=++G.seq;p.slots.push(c);
+  if(c.v>8&&hasArt(pi,'eight')&&p.eightUses<4){p.eightUses++;giveSpecial(pi,1);L(`The 8 Ball: ${p.name} dapat 1 kartu spesial.`)}
+  return true;
+}
+function detach(pi,c){const p=G.p[pi];p.slots=p.slots.filter(x=>x!==c)}
+function discardCard(pi,c){detach(pi,c);c.hidden=false;c.revealed=false;G.discard.push(c)}
+function clearSlots(pi){[...G.p[pi].slots].forEach(c=>discardCard(pi,c))}
+
+function makeSpecial(){
+  const cat=pickW(Object.entries(CFG.catW));
+  const def=pickW(CFG.cards[cat].map(c=>[c,c.p]));
+  const c={uid:UID++,cat,key:def.key,name:def.name,n:1};
+  if(def.dbl&&Math.random()<CFG.dbl)c.n=2;
+  if(cat==='attack')c.speed=rnd(...CFG.atkSpd);
+  if(def.key==='crack')c.speed=rnd(...CFG.crackSpd);
+  if(def.key==='speed')c.amount=rnd(...CFG.spdBuff);
+  if(def.key==='coin')c.amount=Math.random()<.5?CFG.coins[0]:CFG.coins[1];
+  return c;
+}
+const giveSpecial=(pi,n)=>{for(let i=0;i<n;i++)G.p[pi].hand.push(makeSpecial())};
+const defOf=key=>[...CFG.cards.buff,...CFG.cards.attack,...CFG.cards.defend].find(c=>c.key===key);
+
+/* =====================================================================
+   ATTACK RESOLUTION: Antique Shield → slot Defend → (Boxing Gloves) → pemain
+   ===================================================================== */
+function resolveHit(att,vic,c,speed,reflected){
+  const A=G.p[att],V=G.p[vic];
+  if(hasArt(vic,'antique')&&speed<=200){L(`Antique Shield ${V.name} menahan ${c.name} (speed ${speed} ≤ 200).`);return}
+  if(hasArt(vic,'ballon'))balloonTrigger(att,vic);
+  const d=V.defend;
+  if(c.key==='axe'){
+    if(!d){L(`Axe tidak mengenai apa-apa: ${V.name} tidak punya Defend.`);return}
+    if(d.type==='crack'&&speed<=effSpeed(vic,d.speed)){L(`Axe (${speed}) kalah dari Shield Crack ${V.name} (${effSpeed(vic,d.speed)}).`);return}
+    V.defend=null;L(`Axe menghancurkan ${d.name} milik ${V.name}.`,1);return;
+  }
+  if(d){
+    if(d.type==='shield'){L(`Shield ${V.name} menahan ${c.name}.`);return}
+    if(d.type==='crack'){
+      const cs=effSpeed(vic,d.speed);
+      if(speed<=cs){L(`Shield Crack ${V.name} (${cs}) menahan ${c.name} (${speed}).`);return}
+      L(`${c.name} (${speed}) menembus Shield Crack ${V.name} (${cs}).`);
+    }
+    if(d.type==='mirror'){
+      if(reflected){L(`Mirror ${V.name} menyerap pantulan.`);return}
+      L(`Mirror ${V.name} memantulkan ${c.name} ke ${A.name}!`,1);
+      resolveHit(vic,att,c,speed,true);
+      if(Math.random()<.5){V.defend=null;L(`Mirror ${V.name} hancur setelah memantulkan.`)}else L(`Mirror ${V.name} bertahan.`);
+      return;
+    }
+  }
+  if(!reflected&&V.glovesLeft>0){
+    V.glovesLeft--;L(`Boxing Gloves ${V.name} memantulkan ${c.name} (sisa ${V.glovesLeft}).`,1);
+    resolveHit(vic,att,c,speed,true);return;
+  }
+  applyAttack(att,vic,c);
+}
+function balloonTrigger(att,vic){
+  const V=G.p[vic],A=G.p[att];
+  if((V.use.ballon||0)>=3)return;
+  if(Math.random()>=0.4){L(`Ballon ${V.name} tidak meletus.`);return}
+  V.use.ballon=(V.use.ballon||0)+1;
+  const vals=[];
+  for(let i=0;i<2;i++){const x=drawDeck();if(!x)break;if(!addCard(att,x)){G.discard.push(x);break}vals.push(x.star?'★':x.v)}
+  if(!vals.length){L(`Ballon ${V.name} meletus, tetapi slot ${A.name} penuh.`);return}
+  L(`Ballon ${V.name} meletus! ${A.name} menerima ${vals.length} kartu nomor (${vals.join(', ')}).`,1);
+  G.fxq.push(()=>balloonFx(V.name,A.name,vals));
+}
+function applyAttack(att,vic,c){
+  const A=G.p[att],V=G.p[vic];
+  switch(c.key){
+    case 'giveyou':for(let i=0;i<c.n;i++){const x=drawDeck();if(!x)break;if(!addCard(vic,x)){G.discard.push(x);L(`Slot ${V.name} penuh, kartu dibuang.`)}else L(`${V.name} menerima kartu ${x.star?'★':x.v}.`)}break;
+    case 'forme':{const x=newest(vic);if(!x){L('Musuh tidak punya kartu nomor.');break}
+      if(A.slots.length>=CFG.slots){L(`Slot ${A.name} penuh, For Me gagal.`);break}
+      detach(vic,x);x.hidden=false;addCard(att,x);L(`${A.name} merebut kartu ${x.star?'★':x.v} dari ${V.name}.`);break}
+    case 'foryou':{const x=newest(att);if(!x){L('Tidak ada kartu untuk diserahkan.');break}
+      if(V.slots.length>=CFG.slots){L(`Slot ${V.name} penuh, For You gagal.`);break}
+      detach(att,x);x.hidden=false;addCard(vic,x);L(`${A.name} menyerahkan kartu ${x.star?'★':x.v} ke ${V.name}.`);break}
+    case 'jealous':for(let i=0;i<c.n;i++){const x=newest(vic);if(x){discardCard(vic,x);L(`Kartu ${x.star?'★':x.v} milik ${V.name} dibuang.`)}}break;
+    case 'open':{const x=V.slots[0];if(x){x.revealed=true;L(`Kartu utama ${V.name} dibuka: ${x.star?'★ (0)':x.v}.`,1)}else L('Musuh belum punya kartu utama.');break}
+    case 'party':{let n=0;while(V.slots.length<CFG.slots){const x=drawDeck();if(!x)break;addCard(vic,x);n++}L(`Party: ${V.name} menerima ${n} kartu.`);break}
+    case 'restartEnemy':clearSlots(vic);L(`Semua kartu nomor ${V.name} dihapus.`);break;
+  }
+}
+
+/* =====================================================================
+   AKSI PEMAIN
+   ===================================================================== */
+async function act(fn){
+  if(G.busy)return false;
+  const T=GID;G.busy=true;let did=false;
+  try{did=await fn();await flushFx()}finally{if(T===GID){G.busy=false}}
+  if(T!==GID)return false;
+  if(did!==false){
+    G.clear=0;
+    if(G.thief){G.thief.steps--;if(G.thief.steps<=0)endTurnNow()}
+  }
+  render();return did!==false;
+}
+async function flushFx(){while(G&&G.fxq.length){const f=G.fxq.shift();await f()}}
+function endTurnNow(){G.turnOver=true;const f=G.endTurn;G.endTurn=null;if(f)f()}
+function pressClear(){
+  if(G.thief){G.thief.steps--;L(`${G.p[G.cur].name} menekan Clear (Thief Clock).`);if(G.thief.steps<=0)endTurnNow();render();return}
+  G.clear++;L(`${G.p[G.cur].name} menekan Clear (${G.clear}/3).`,G.clear>=3);endTurnNow();
+}
+async function drawAction(pi){
+  const p=G.p[pi];
+  if(p.slots.length>=CFG.slots){if(!p.bot)toast('8 slot sudah penuh');return false}
+  const c=drawDeck();if(!c){if(!p.bot)toast('Deck habis');return false}
+  addCard(pi,c);L(`${p.name} minta kartu: ${c.star?'★ (0)':c.v}.`);return true;
+}
+async function chooseOwn(pi,k){
+  const p=G.p[pi];const out=[];
+  k=Math.min(k,p.slots.length);
+  for(let i=0;i<k;i++){
+    const left=p.slots.filter(c=>!out.includes(c));
+    if(p.bot){
+      let best=null,bd=1e9;for(const c of left){const t=total(p)-out.reduce((s,x)=>s+x.v,0)-c.v;const d=Math.abs(21-t);if(d<bd){bd=d;best=c}}out.push(best);continue;
+    }
+    const r=await ask({title:k>1?`Pilih kartu untuk dibuang (${i+1}/${k})`:'Pilih kartu untuk dibuang',
+      body:`Total sekarang <b>${total(p)}</b>.`,cancel:'Batal',grid:true,
+      options:left.map(c=>({label:c.star?'★':c.v,value:c}))});
+    if(!r)return null;out.push(r);
+  }
+  return out;
+}
+async function useSpecial(pi,uid,pre){
+  const p=G.p[pi],c=p.hand.find(x=>x.uid===uid);if(!c)return false;
+  const take=()=>{p.hand=p.hand.filter(x=>x.uid!==uid)};
+  const nm=sName(c),warn=m=>{if(!p.bot)toast(m);return false};
+  switch(c.key){
+    case 'minus':{if(!p.slots.length)return warn('Tidak ada kartu nomor untuk dibuang');take();
+      L(`${p.name} memakai ${nm}.`);for(let i=0;i<c.n;i++){const x=newest(pi);if(x){discardCard(pi,x);L(`Kartu ${x.star?'★':x.v} dibuang.`)}}return true}
+    case 'pick':{if(!p.slots.length)return warn('Tidak ada kartu nomor untuk dibuang');
+      const ch=await chooseOwn(pi,c.n);if(!ch)return false;take();L(`${p.name} memakai ${nm}.`);
+      ch.forEach(x=>{discardCard(pi,x);L(`Kartu ${x.star?'★':x.v} dibuang.`)});return true}
+    case 'recycle':{if(!p.slots.length)return warn('Tidak ada kartu nomor untuk dibuang');take();
+      const x=newest(pi);discardCard(pi,x);giveSpecial(pi,1);L(`${p.name} memakai Recycle: buang ${x.star?'★':x.v}, dapat 1 kartu spesial.`);return true}
+    case 'restartSelf':{if(!p.slots.length)return warn('Tidak ada kartu nomor untuk dibuang');take();clearSlots(pi);L(`${p.name} memakai Restart: semua kartu nomor dibuang.`);return true}
+    case 'speed':take();p.speedBonus+=c.amount;L(`${p.name} memakai Speed +${c.amount} (total bonus ${p.speedBonus}).`);return true;
+    case 'coin':take();p.coins+=c.amount;L(`${p.name} mendapat ${c.amount} koin (saldo ${p.coins}).`);return true;
+    case 'giveme':{
+      if(p.slots.length>=CFG.slots)return warn('8 slot sudah penuh');
+      let n=pre;
+      if(n==null){n=await ask({title:'Give Me',body:'Pilih angka kartu yang ingin diambil dari draw pile.',cancel:'Batal',grid:true,
+        options:Array.from({length:18},(_,i)=>({label:i+1,value:i+1}))});if(!n)return false}
+      take();const i=G.deck.findIndex(x=>x.v===n&&!x.star);
+      if(i<0){L(`${p.name} memakai Give Me ${n}: tidak ada di draw pile, kartu hangus.`);return true}
+      const x=G.deck.splice(i,1)[0];x.hidden=false;x.revealed=false;addCard(pi,x);L(`${p.name} memakai Give Me dan mengambil ${n}.`);return true}
+  }
+  if(c.cat==='attack'){
+    take();const sp=effSpeed(pi,c.speed);L(`${p.name} menyerang dengan ${nm} (speed ${sp}).`,1);
+    resolveHit(pi,1-pi,c,sp,false);return true;
+  }
+  if(c.cat==='defend'){
+    if(p.defend)return warn('Slot Defend sudah terisi');
+    take();p.defend={type:c.key,speed:c.speed||0,name:c.name};L(`${p.name} memasang ${c.name}.`);return true;
+  }
+  return false;
+}
+const LIM={ocean:2,diamondAxe:3,meatCube:2,trashGloves:3};
+const USABLE=['boxing','ocean','parasite','diamondAxe','meatCube','trashGloves'];
+const artSlot=(pi,id)=>{const a=G.p[pi].art;return a.P&&a.P.id===id?'P':'A'};
+async function betFx(cards,owner){
+  const fx=document.createElement('div');fx.id='fx';
+  fx.innerHTML=`<div class="fxbox"><div class="lid"></div><span>PARASITE CUBE</span></div>`+
+    cards.map((x,i)=>`<div class="fxc ${x.c.cat} ${x.from===G.view?'b':'t'}" style="--i:${i};--dx:${(i%3-1)*70}px"><i>${CAT_LABEL[x.c.cat]}</i><b>${esc(sName(x.c))}</b></div>`).join('')+
+    `<div class="fxt">${esc(G.p[owner].name)} memaksa taruhan ${cards.length/2} kartu spesial dari tiap pemain</div>`;
+  document.body.appendChild(fx);await sleep(2800);fx.remove();
+}
+function showFx(html,ms){return new Promise(async res=>{const fx=document.createElement('div');fx.id='fx';fx.innerHTML=html;document.body.appendChild(fx);await sleep(ms);fx.remove();res()})}
+function hatFx(pi){
+  const p=G.p[pi];
+  const vals=Array.from({length:8},(_,i)=>p.slots[i]?(p.slots[i].star?'★':p.slots[i].v):rnd(1,18));
+  const hat='<svg viewBox="0 0 120 100"><ellipse cx="60" cy="86" rx="56" ry="10" fill="#1c1c24"/><rect x="26" y="14" width="68" height="72" rx="6" fill="#2a2a34"/><rect x="26" y="62" width="68" height="14" fill="#dba944"/><ellipse cx="60" cy="14" rx="34" ry="7" fill="#383844"/></svg>';
+  return showFx(`<div class="hwrap"><div class="hrow">${vals.map((v,i)=>`<div class="hc" style="--i:${i}"><div class="in"><div class="hf front">${v}</div><div class="hf back">?</div></div></div>`).join('')}</div><div class="hat">${hat}</div></div><div class="fxt">${esc(p.name)} memakai Magic Hat: semua kartu nomornya tertutup dari lawan selama ronde</div>`,3500);
+}
+function balloonFx(owner,att,vals){
+  const shards=Array.from({length:12},(_,i)=>`<span class="shard" style="--a:${i*30}deg"></span>`).join('');
+  return showFx(`<div class="bwrap"><div class="balloon"></div>${shards}${vals.map((v,i)=>`<div class="pcard" style="--i:${i}">${v}</div>`).join('')}</div><div class="fxt">Ballon ${esc(owner)} meletus! ${esc(att)} menerima ${vals.length} kartu nomor</div>`,3400);
+}
+function clockFx(name){
+  const ticks=Array.from({length:12},(_,i)=>`<span class="tk" style="transform:rotate(${i*30}deg)"></span>`).join('');
+  return showFx(`<div class="clk"><span class="ring"></span>${ticks}<span class="hnd hh"></span><span class="hnd hm"></span></div><div class="fxt">Thief Clock! ${esc(name)} mendapat 2 langkah ekstra</div>`,3000);
+}
+async function diceFx(r,name){
+  const fx=document.createElement('div');fx.id='fx';
+  fx.innerHTML=`<div class="die"><div class="sh"></div><svg viewBox="0 0 150 150"><g fill="none" stroke="rgba(20,26,27,.4)" stroke-width="2"><polygon points="75,0 141,37 141,112 75,150 9,112 9,37"/><polygon points="75,30 118,55 118,95 75,120 32,95 32,55"/><path d="M75 0V30M141 37L118 55M141 112L118 95M75 150V120M9 112L32 95M9 37L32 55"/></g></svg><b>?</b></div><div class="fxt">${esc(name)} melempar dadu d18 (Meat Cube)</div>`;
+  document.body.appendChild(fx);
+  const die=fx.querySelector('.die'),nb=die.querySelector('b');
+  const iv=setInterval(()=>{nb.textContent=rnd(1,18)},75);
+  await sleep(1550);clearInterval(iv);nb.textContent=r;die.classList.add('land');
+  fx.querySelector('.fxt').textContent=`Hasil dadu d18: ${r}`;
+  await sleep(1300);fx.remove();
+}
+async function useArtifact(pi,slot){
+  const p=G.p[pi],en=G.p[1-pi],a=p.art[slot];if(!a||a.left<=0)return false;
+  const warn=m=>{if(!p.bot)toast(m);return false};
+  const id=a.id,used=p.use[id]||0;
+  if(LIM[id]&&used>=LIM[id])return warn('Jatah artefak ini sudah habis di ronde ini');
+  switch(id){
+    case 'boxing':
+      if(p.glovesUsed)return warn('Boxing Gloves sudah dipakai di ronde ini');
+      p.glovesUsed=true;p.glovesLeft=3;L(`${p.name} memasang Boxing Gloves (memantulkan 3 serangan).`);return true;
+    case 'ocean':{
+      const top=G.deck.slice(-3).reverse();if(!top.length)return warn('Deck kosong');
+      p.use[id]=used+1;L(`${p.name} memakai Ocean Glasses.`);
+      if(!p.bot)await ask({title:'Ocean Glasses',body:`3 kartu berikutnya di deck, dari yang paling atas:<div class="peek">${top.map(c=>`<span class="pk">${c.star?'★':c.v}</span>`).join('')}</div>`,options:[{label:'Tutup',value:1,cls:'pri'}]});
+      return true}
+    case 'parasite':{
+      if(G.bet)return warn('Sudah ada taruhan di ronde ini');
+      const n=Math.min(3,p.hand.length,en.hand.length);
+      if(n<1)return warn('Kedua pemain harus punya kartu spesial');
+      const cards=[];
+      for(const pj of [pi,1-pi]){const H=shuffle(G.p[pj].hand);for(let k=0;k<n;k++)cards.push({c:H.pop(),from:pj})}
+      L(`${p.name} memakai Parasite Cube: tiap pemain menaruh ${n} kartu spesial ke dalam kotak.`,1);
+      await betFx(cards,pi);
+      G.bet={owner:pi,n,cards,fresh:true};setTimeout(()=>{if(G.bet)G.bet.fresh=false},1800);
+      return true}
+    case 'diamondAxe':
+      if(!en.defend)return warn('Musuh tidak punya kartu Defend');
+      p.use[id]=used+1;L(`Diamond Axe menghancurkan ${en.defend.name} milik ${en.name}.`,1);en.defend=null;return true;
+    case 'meatCube':{
+      p.use[id]=used+1;const r=rnd(1,18);await diceFx(r,p.name);L(`${p.name} memakai Meat Cube: dadu d18 = ${r}.`);
+      const i=G.deck.findIndex(x=>x.v===r&&!x.star);
+      if(i<0){L('Angka itu tidak ada di draw pile, Meat Cube batal.');return true}
+      if(en.slots.length>=CFG.slots){L('Slot musuh penuh, Meat Cube batal.');return true}
+      const x=G.deck.splice(i,1)[0];x.hidden=false;x.revealed=false;addCard(1-pi,x);L(`${en.name} menerima kartu ${r}.`);return true}
+    case 'trashGloves':{
+      if(!p.slots.length)return warn('Tidak ada kartu nomor untuk dibuang');
+      const ch=await chooseOwn(pi,1);if(!ch)return false;
+      p.use[id]=used+1;discardCard(pi,ch[0]);L(`${p.name} memakai Trash Gloves: buang ${ch[0].star?'★':ch[0].v}.`);return true}
+  }
+  return warn('Artefak ini aktif otomatis di tahap akhir');
+}
+
+/* =====================================================================
+   MODAL
+   ===================================================================== */
+function ask(o){return new Promise(res=>{G.modal={...o,res};render()})}
+function handoff(pi){return ask({title:`Giliran ${esc(G.p[pi].name)}`,body:'Serahkan perangkat ke pemain ini. Layar tertutup supaya kartu lawan tidak terlihat.',opaque:true,
+  options:[{label:`Saya ${G.p[pi].name}, mulai`,value:1,cls:'pri'}]})}
+
+/* =====================================================================
+   ALUR GAME
+   ===================================================================== */
+async function playGame(T){
+  while(G&&!G.over&&T===GID){await playRound(T);}
+}
+async function setupRound(){
+  G.round++;G.reveal=false;G.clear=0;G.turnCount=0;G.phase='turns';
+  const r=G.round;
+  if(G.pendingSudden){G.pendingSudden=false;G.p.forEach((p,i)=>giveSpecial(i,CFG.sudden));L(`Skor 7:7! Kedua pemain mendapat ${CFG.sudden} kartu spesial. Pemenang ronde ini memenangkan game.`,1)}
+  else if((r-1)%CFG.every===0){G.p.forEach((p,i)=>giveSpecial(i,CFG.deal));L(`Ronde ${r}: kedua pemain mendapat ${CFG.deal} kartu spesial.`,1)}
+  G.p.forEach(p=>{p.slots=[];p.defend=null;p.speedBonus=0;p.glovesLeft=0;p.glovesUsed=false;p.eightUses=0;p.use={}});G.bet=null;
+  G.deck=buildDeck();G.discard=[];
+  G.p.forEach((p,i)=>{const c=drawDeck();c.hidden=true;addCard(i,c)});
+  L(`Ronde ${r} dimulai. Deck dikocok, tiap pemain menerima 1 kartu utama tertutup.`,1);
+  for(let pi=0;pi<2;pi++){
+    const tals=[['buffTal','buff'],['huntTal','attack'],['strengthTal','defend']];
+    for(const [id,cat] of tals)if(hasArt(pi,id)){
+      const en=G.p[1-pi],pool=shuffle(en.hand.filter(c=>c.cat===cat)).slice(0,3);
+      pool.forEach(c=>{en.hand=en.hand.filter(x=>x!==c);G.p[pi].hand.push(c)});
+      L(`${ARTS[id].name}: ${G.p[pi].name} menerima ${pool.length} kartu ${CAT_LABEL[cat]} dari ${en.name}.`,1);
+    }
+  }
+  G.cur=G.starter;G.starter=1-G.starter;
+}
+async function runTurn(pi,T,thief){
+  G.cur=pi;G.turnOver=false;G.thief=thief?{steps:2}:null;
+  G.view=G.mode==='hot'?pi:0;
+  if(G.mode==='hot'){G.locked=true;render();await handoff(pi);if(T!==GID)return}
+  G.locked=G.p[pi].bot;render();
+  if(G.p[pi].bot){await botTurn(pi,T)}
+  else await new Promise(r=>{G.endTurn=r});
+  G.thief=null;G.locked=true;
+}
+async function playRound(T){
+  await setupRound();
+  render();
+  while(true){
+    G.turnCount++;
+    await runTurn(G.cur,T,false);if(T!==GID)return;
+    if(G.clear>=3)break;
+    G.cur=1-G.cur;
+  }
+  const last=G.cur;G.phase='final';
+  /* tahap akhir: Thief Clock → Mirror → buka kartu → pemenang */
+  for(const pi of [last,1-last])if(hasArt(pi,'thief')){
+    L(`Thief Clock: ${G.p[pi].name} mendapat 2 langkah.`,1);
+    G.view=G.mode==='hot'?pi:0;G.locked=true;render();await clockFx(G.p[pi].name);if(T!==GID)return;
+    await runTurn(pi,T,true);if(T!==GID)return;
+  }
+  const guess=[null,null];
+  for(const pi of [last,1-last])if(hasArt(pi,'mHunt')){
+    G.cur=pi;G.view=G.mode==='hot'?pi:0;
+    if(G.mode==='hot'){G.locked=true;render();await handoff(pi)}
+    if(G.p[pi].bot){guess[pi]=Math.random()<.9?rnd(1,18):0;await sleep(500)}
+    else{
+      guess[pi]=await ask({title:'Mirror of Hunt',body:'Tebak angka kartu utama musuh. Benar berarti menang ronde ini. Salah tidak ada hukuman.',cancel:'Lewati',grid:true,
+        options:[{label:'★',value:0},...Array.from({length:18},(_,i)=>({label:i+1,value:i+1}))]});
+      if(guess[pi]===null||guess[pi]===undefined)guess[pi]=null;
+    }
+    if(T!==GID)return;
+  }
+  G.reveal=true;G.p.forEach(p=>p.slots.forEach(c=>{c.hidden=false}));
+  G.view=0;G.locked=true;
+  const info=resolveRound(guess);
+  const betTxt=settleBet(info.w);
+  const P=G.p;
+  const lines=P.map(p=>`<div><b>${esc(p.name)}</b>: ${p.slots.map(c=>c.star?'★':c.v).join(' + ')||'—'} = <b>${total(p)}</b> (jarak ${dist(p)})</div>`).join('');
+  const gl=guess.map((g,i)=>g===null?'':`<div>${esc(P[i].name)} menebak kartu utama musuh: <b>${g===0?'★':g}</b> → ${info.hc[i]?'benar':'salah'}</div>`).join('');
+  await ask({title:`Ronde ${G.round} selesai`,body:`${lines}${gl}<div>${esc(info.reason)}</div><div class="win">${info.w===null?'Draw, tidak ada skor':esc(P[info.w].name)+' +1 skor'}</div>${betTxt}<div>Skor ${P[0].score} : ${P[1].score}</div>`,
+    options:[{label:G.over?'Lihat hasil':'Lanjut',value:1,cls:'pri'}]});
+  if(T!==GID)return;
+  if(G.over){
+    await ask({title:'Game selesai',body:`<div class="win">${esc(P[info.w].name)} menang ${P[0].score} : ${P[1].score}</div>`,options:[{label:'Kembali ke menu',value:1,cls:'pri'}]});
+    if(T===GID){G=null;render()}return;
+  }
+  /* akhir ronde: artefak expired */
+  P.forEach((p,i)=>['P','A'].forEach(s=>{const a=p.art[s];if(a){a.left--;if(a.left<=0){L(`${ARTS[a.id].name} milik ${p.name} habis masa aktif.`);p.art[s]=null}}}));
+  P.forEach(p=>{p.defend=null});
+  await shopPhase(T);if(T!==GID)return;
+  if(P[0].score===CFG.win-1&&P[1].score===CFG.win-1&&!G.sudden){
+    G.sudden=true;G.pendingSudden=true;
+    for(const pi of [0,1]){
+      if(G.mode==='hot'){G.view=pi;G.locked=true;render();await handoff(pi)}
+      await freeArtifact(pi,T);if(T!==GID)return;
+    }
+  }
+}
+function settleBet(w){
+  const b=G.bet;if(!b)return'';G.bet=null;const P=G.p;
+  if(w===null){b.cards.forEach(x=>P[x.from].hand.push(x.c));return'<div>Parasite Cube: ronde draw, semua kartu taruhan kembali ke pemilik asal.</div>'}
+  if(w===b.owner){b.cards.forEach(x=>P[w].hand.push(x.c));return`<div>Parasite Cube: ${esc(P[w].name)} menang dan mengambil semua ${b.cards.length} kartu taruhan.</div>`}
+  const en=1-b.owner,pool=shuffle([...b.cards]),take=pool.splice(0,b.n===3?4:b.n);
+  take.forEach(x=>P[en].hand.push(x.c));pool.forEach(x=>P[b.owner].hand.push(x.c));
+  return`<div>Parasite Cube: pemilik cube kalah. ${esc(P[en].name)} mengambil ${take.length} kartu acak dari kotak, sisa ${pool.length} kembali ke ${esc(P[b.owner].name)}.</div>`;
+}
+function resolveRound(guess){
+  const P=G.p,hc=[false,false];
+  [0,1].forEach(i=>{const m=P[1-i].slots[0];hc[i]=guess[i]!==null&&!!m&&m.v===guess[i]&&(guess[i]!==0||m.star)});
+  let w=null,reason='';
+  const cmp=()=>{const a=dist(P[0]),b=dist(P[1]);return a<b?0:b<a?1:null};
+  if(hc[0]&&hc[1]){w=cmp();reason='Kedua tebakan Mirror of Hunt benar, dibandingkan lewat jarak ke 21.'}
+  else if(hc[0]||hc[1]){w=hc[0]?0:1;reason=`Tebakan Mirror of Hunt ${P[w].name} benar.`}
+  else{
+    const sw=[0,1].find(i=>stars(P[i])>=2&&total(P[i])<10);
+    if(sw!==undefined){w=sw;reason=`Auto-win Bintang: ${P[w].name} punya 2 Bintang dan total di bawah 10.`}
+    else{w=cmp();reason=w===null?'Jarak ke 21 sama.':`${P[w].name} lebih dekat ke 21.`}
+  }
+  if(w!==null){P[w].score++;L(`${P[w].name} menang ronde ${G.round}. Skor ${P[0].score}:${P[1].score}.`,1);if(P[w].score>=CFG.win)G.over=true}
+  else L(`Ronde ${G.round} draw.`,1);
+  return{w,hc,reason};
+}
+
+/* ---------- toko artefak ---------- */
+const heldIds=()=>G.p.flatMap(p=>[p.art.P,p.art.A]).filter(Boolean).map(a=>a.id);
+const artPool=()=>Object.keys(ARTS).filter(id=>ARTS[id].impl&&!heldIds().includes(id));
+function install(pi,id){
+  const p=G.p[pi],slot=slotOf(p,id);
+  const old=p.art[slot];p.art[slot]={id,left:ARTS[id].dur};
+  L(`${p.name} memasang ${ARTS[id].name}${old?` (menggantikan ${ARTS[old.id].name})`:''}.`,1);
+}
+const slotOf=(p,id)=>{const t=ARTS[id].type;return t==='A'?'A':t==='P'?'P':(!p.art.P?'P':!p.art.A?'A':'P')};
+async function offerPick(pi,free,T){
+  const p=G.p[pi];const offers=shuffle(artPool()).slice(0,3);
+  if(!offers.length){L('Pool artefak kosong.');return}
+  let id;
+  if(p.bot)id=offers[rnd(0,offers.length-1)];
+  else{
+    id=await ask({title:free?'Artefak gratis':'Pilih 1 artefak',body:free?'Pilih 1 dari 3 artefak.':'Pilih 1 dari 3 artefak. Jika tidak memilih, ketiganya dibuang dan koin tidak kembali.',cancel:free?null:'Buang semua',
+      options:offers.map(o=>{const a=ARTS[o],old=p.art[slotOf(p,o)];return{label:a.name,sub:`${a.type==='A'?'Aktif':'Pasif'} · ${a.dur} ronde · ${a.d}${old?` · Mengganti ${ARTS[old.id].name}`:''}`,value:o}})});
+    if(T!==GID)return;
+  }
+  if(id){install(pi,id);if(id==='magicHat'){await hatFx(pi);if(T!==GID)return}}else L(`${p.name} membuang ketiga pilihan.`);
+}
+async function freeArtifact(pi,T){await offerPick(pi,true,T)}
+async function shopPhase(T){
+  G.phase='shop';
+  for(const pi of [0,1]){
+    const p=G.p[pi];
+    if(p.coins<CFG.price)continue;
+    if(G.mode==='hot'){G.view=pi;G.locked=true;render();await handoff(pi);if(T!==GID)return}
+    G.view=G.mode==='hot'?pi:0;
+    let buy;
+    if(p.bot)buy=true;
+    else{buy=await ask({title:'Toko artefak',body:`Saldo kamu <b>${p.coins}</b> koin. Harga ${CFG.price} koin untuk melihat 3 artefak acak.`,
+      options:[{label:`Beli (${CFG.price} koin)`,value:true,cls:'pri'},{label:'Lewati',value:false}]});if(T!==GID)return}
+    if(!buy)continue;
+    p.coins-=CFG.price;L(`${p.name} membeli akses toko (sisa ${p.coins} koin).`);
+    await offerPick(pi,false,T);if(T!==GID)return;
+  }
+}
+
+/* ---------- BOT ---------- */
+function bestRemoval(pi){const p=G.p[pi];let best=null,bd=1e9;for(const c of p.slots){const d=Math.abs(21-(total(p)-c.v));if(d<bd){bd=d;best=c}}return best}
+function botPick(pi){
+  const me=G.p[pi],op=G.p[1-pi],t=total(me),d=21-t,H=me.hand;
+  const has=k=>H.find(c=>c.key===k);let c;
+  if(G.thief&&G.thief.steps<=0)return null;
+  if((c=has('coin')))return{sp:c.uid};
+  if((c=has('speed')))return{sp:c.uid};
+  if(!me.defend&&(c=H.find(x=>x.cat==='defend')))return{sp:c.uid};
+  if(t>22){
+    if((c=has('minus')))return{sp:c.uid};
+    if((c=has('pick')))return{sp:c.uid};
+    if((c=has('recycle')))return{sp:c.uid};
+    if(t>=27&&(c=has('restartSelf')))return{sp:c.uid};
+  }
+  if(d>=1&&d<=18&&me.slots.length<CFG.slots&&(c=has('giveme'))&&G.deck.some(x=>x.v===d&&!x.star))return{sp:c.uid,pre:d};
+  if(G.turnCount<14&&Math.random()<.5){
+    const atk=H.filter(x=>x.cat==='attack'&&!(x.key==='axe'&&!op.defend)&&!(x.key==='foryou'&&t<=21)&&!(x.key==='forme'&&(!newest(1-pi)||me.slots.length>=CFG.slots))&&!(x.key==='party'&&op.slots.length>=7));
+    if(atk.length)return{sp:atk[rnd(0,atk.length-1)].uid};
+  }
+  if(!me.glovesUsed&&hasArt(pi,'boxing'))return{art:artSlot(pi,'boxing')};
+  if(hasArt(pi,'parasite')&&!G.bet&&me.hand.length>=2&&op.hand.length>=1&&Math.random()<.5)return{art:artSlot(pi,'parasite')};
+  if(hasArt(pi,'diamondAxe')&&op.defend&&(me.use.diamondAxe||0)<3)return{art:artSlot(pi,'diamondAxe')};
+  if(hasArt(pi,'meatCube')&&(me.use.meatCube||0)<2&&op.slots.length<7&&Math.random()<.4)return{art:artSlot(pi,'meatCube')};
+  if(hasArt(pi,'trashGloves')&&t>22&&(me.use.trashGloves||0)<3&&me.slots.length)return{art:artSlot(pi,'trashGloves')};
+  if(me.slots.length<CFG.slots&&(G.deck.length||G.discard.length)){
+    if(t<=14)return{draw:1};
+    if(t<=17&&Math.random()<.35)return{draw:1};
+  }
+  return null;
+}
+async function botTurn(pi,T){
+  let n=0;
+  while(!G.turnOver&&T===GID){
+    await sleep(700);if(T!==GID||G.turnOver)return;
+    const a=n<7&&G.turnCount<=16?botPick(pi):null;
+    if(!a){pressClear();render();continue}
+    n++;
+    if(a.draw)await act(()=>drawAction(pi));
+    else if(a.art)await act(()=>useArtifact(pi,a.art));
+    else await act(()=>useSpecial(pi,a.sp,a.pre));
+    if(T!==GID)return;
+  }
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+const ico=c=>`<svg><use href="#i-${c==='attack'?'atk':c==='defend'?'def':'buff'}"/></svg>`;
+function slotHTML(p,pi,c,idx){
+  if(!c)return'<div class="card empty"></div>';
+  const show=pi===G.view||G.reveal||((!c.hidden||c.revealed)&&!hasArt(pi,'magicHat'));
+  const main=idx===0;
+  if(!show)return`<div class="card back"><span class="big">?</span>${main?'<span class="tag">Utama</span>':''}</div>`;
+  const face=c.star?'★':c.v;
+  return`<div class="card${c.star?' star':''}${c.revealed&&pi!==G.view&&c.hidden===false&&idx===0&&!G.reveal?' seen':''}"><span class="cn">${face}</span><span class="big">${face}</span><span class="cn br">${face}</span>${main?'<span class="tag">Utama</span>':''}</div>`;
+}
+function rowHTML(pi,rev){
+  const p=G.p[pi];
+  return`<div class="row${rev?' rev':''}">${Array.from({length:CFG.slots},(_,i)=>slotHTML(p,pi,p.slots[i],i)).join('')}</div>`;
+}
+function defendHTML(pi){
+  const d=G.p[pi].defend;
+  if(!d)return`<div class="dslot">Slot Defend<br>${esc(G.p[pi].name)}</div>`;
+  const tx=d.type==='shield'?'Kebal semua serangan. Counter: Axe.':d.type==='mirror'?'Memantulkan serangan, 50% bertahan. Counter: Axe.':`Menahan serangan dengan speed ≤ ${effSpeed(pi,d.speed)}. Yang lebih tinggi menembus.`;
+  return`<div class="dslot on ${d.type}"><div><svg><use href="#i-def"/></svg><b>${d.name}</b><small>${tx}</small></div></div>`;
+}
+function artHTML(pi,interactive){
+  const p=G.p[pi];
+  return['P','A'].map(s=>{
+    const a=p.art[s];
+    if(!a)return`<div class="art empty"><div class="kind"><span class="dot ${s}"></span>${s==='P'?'Pasif':'Aktif'}</div><small>Kosong</small></div>`;
+    const A=ARTS[a.id],lim=LIM[a.id],used=p.use[a.id]||0;
+    let info='',can=true;
+    if(a.id==='boxing'){info=p.glovesLeft>0?`Memantul ×${p.glovesLeft}`:(p.glovesUsed?'Sudah habis':'Belum dipasang');can=!p.glovesUsed}
+    else if(lim){info=`Jatah ${lim-used}/${lim}`;can=used<lim}
+    else if(a.id==='parasite'){info=G.bet?'Taruhan berjalan':'Siap dipakai';can=!G.bet}
+    else if(a.id==='ballon')info=`Meletus ${p.use.ballon||0}/3 ronde ini`;
+    else if(a.id==='magicHat')info='Kartu nomormu tertutup untuk lawan';
+    else if(a.id==='eight')info=`${p.eightUses}/4 bonus ronde ini`;
+    else if(a.id==='thief'||a.id==='mHunt')info='Aktif otomatis di tahap akhir';
+    const btn=interactive&&USABLE.includes(a.id)&&can&&canAct()&&G.cur===pi?`<button class="btn sm pri" data-a="art" data-slot="${s}">${a.id==='boxing'?'Pasang':'Pakai'}</button>`:'';
+    return`<div class="art"><div class="kind"><span class="dot ${s}"></span>${s==='P'?'Pasif':'Aktif'}${A.type==='H'?' · Hybrid':''}</div><b>${A.name}</b><small>${A.d}</small>${info?`<small class="left">${info}</small>`:''}${btn}<span class="left">Sisa ${a.left} ronde</span></div>`;
+  }).join('');
+}
+function betBoxHTML(){
+  const b=G.bet;if(!b)return'';
+  return`<div class="betbox${b.fresh?' fresh':''}"><div class="bt">Kotak Parasite</div><div class="bc">${b.cards.map((x,i)=>`<span class="mc ${x.c.cat}" style="--i:${i}" title="${esc(sName(x.c))} (dari ${esc(G.p[x.from].name)})">${ico(x.c.cat)}</span>`).join('')}</div><small>Pemilik: ${esc(G.p[b.owner].name)} · ${b.n} kartu tiap pemain. Pemenang ronde menentukan siapa yang mengambil.</small></div>`;
+}
+function canAct(){return G&&!G.locked&&!G.busy&&!G.modal&&(G.phase==='turns'||G.thief)}
+function spHTML(pi){
+  const p=G.p[pi],can=canAct()&&G.cur===pi;
+  if(!p.hand.length)return'<div class="none">Belum ada kartu spesial.</div>';
+  const order={buff:0,attack:1,defend:2};
+  return[...p.hand].sort((a,b)=>order[a.cat]-order[b.cat]).map(c=>{
+    const def=defOf(c.key);let txt=c.n===2&&def.d2?def.d2:def.d;
+    if(c.key==='speed')txt=`Tambah +${c.amount} speed ke semua Attack dan Shield Crack-mu sampai akhir ronde.`;
+    if(c.key==='coin')txt=`Tambah ${c.amount} koin ke saldo.`;
+    const sp=c.speed!=null?`<span class="spd">${effSpeed(pi,c.speed)}</span>`:'';
+    return`<button class="sp ${c.cat}" data-a="sp" data-uid="${c.uid}" ${can?'':'disabled'}><div class="hd">${ico(c.cat)}${CAT_LABEL[c.cat]}${sp}</div><div class="bd"><b>${sName(c)}${c.key==='speed'?` +${c.amount}`:c.key==='coin'?` ${c.amount}`:''}</b><small>${txt}</small></div></button>`;
+  }).join('');
+}
+function pbar(pi,isMe){
+  const p=G.p[pi];
+  const pips=Array.from({length:CFG.win},(_,i)=>`<i class="${i<p.score?'on':''}"></i>`).join('');
+  const vis=(hasArt(pi,'magicHat')&&!G.reveal)?0:p.slots.filter(c=>!c.hidden||c.revealed||G.reveal).reduce((s,c)=>s+c.v,0);
+  return`<div class="pbar"><span class="nm${G.cur===pi&&G.phase!=='shop'?' turn':''}">${esc(p.name)}</span><span class="pips" title="Skor ${p.score}">${pips}</span>
+    <span class="stat coin">Koin <b>${p.coins}</b></span><span class="stat">Kartu spesial <b>${p.hand.length}</b></span>
+    ${isMe?'':`<span class="stat">Terlihat <b>${vis}</b></span>`}</div>`;
+}
+function boardHTML(){
+  const V=G.view,O=1-V,me=G.p[V];
+  const t=total(me),d=Math.abs(21-t);
+  const myTurn=G.cur===V&&canAct();
+  const third=G.clear===2&&!G.thief;
+  const clearLabel=G.thief?`Clear (−1 langkah)`:third?'Clear ke-3 · akhiri ronde':'Clear';
+  const hud=`<div class="hud"><div class="rn">Ronde ${G.round}</div>
+    <div>Giliran: <b style="color:var(--fg)">${esc(G.p[G.cur].name)}</b></div>
+    <div class="clearpips" title="Clear beruntun">${[1,2,3].map(i=>`<i class="${G.clear>=i?'on':''}${i===3?' last':''}"></i>`).join('')}</div>
+    <div>Deck ${G.deck.length} · Buang ${G.discard.length}</div>
+    ${G.thief?`<div class="banner">Thief Clock: ${G.thief.steps} langkah</div>`:''}
+    ${G.sudden?'<div class="banner">Sudden death 7:7</div>':''}</div>${betBoxHTML()}`;
+  return`<div class="top"><div class="t">RE<span>GRET</span></div><div class="r"><button class="btn sm" data-a="guide">Buku Panduan</button><button class="btn sm" data-a="menu">Menu</button></div></div>
+  <section>${pbar(O,false)}${rowHTML(O,true)}</section>
+  <section class="mid"><div class="arts">${artHTML(V,true)}</div>
+    <div class="center">${defendHTML(O)}${hud}${defendHTML(V)}</div>
+    <div class="arts">${artHTML(O,false)}</div></section>
+  <section>${rowHTML(V,false)}${pbar(V,true)}</section>
+  <section class="ctrl"><button class="btn pri" data-a="draw" ${myTurn?'':'disabled'}>Minta kartu</button>
+    <button class="btn clearbtn${third?' third':''}" data-a="clear" ${myTurn?'':'disabled'}>${clearLabel}</button>
+    <div class="sum"><span>Total <b>${t}</b></span><span class="${d<=2?'near':d>=8?'far':''}">Jarak ke 21 <b>${d}</b></span></div></section>
+  <section><div class="hand">${spHTML(V)}</div></section>
+  <section class="log">${G.log.slice(0,14).map(l=>`<div class="${l.hi?'hi':''}">${esc(l.t)}</div>`).join('')}</section>`;
+}
+function modalHTML(){
+  const m=G.modal;
+  return`<div class="ov${m.opaque?' opaque':''}"><div class="mod" role="dialog" aria-modal="true"><h3>${m.title}</h3>${m.body?`<div class="mb">${m.body}</div>`:''}
+    <div class="opts${m.grid?' grid':''}">${m.options.map((o,i)=>`<button class="${m.grid?'opt':'opt btn '+(o.cls||'')}" data-a="opt" data-i="${i}">${m.grid?o.label:`<b>${esc(o.label)}</b>${o.sub?`<small>${esc(o.sub)}</small>`:''}`}</button>`).join('')}
+    ${m.cancel?`<button class="btn" style="${m.grid?'grid-column:1/-1':''}" data-a="opt" data-i="-1">${m.cancel}</button>`:''}</div></div></div>`;
+}
+function menuHTML(){
+  return`<div class="menu"><h1>RE<span>GRET</span></h1>
+  <p>Game kartu 21 untuk dua pemain. Satu tujuan: jumlah kartu paling dekat ke 21. Melewati 21 tidak otomatis kalah. Skor 8 lebih dulu menang.</p>
+  <div class="names"><label>Pemain 1<input id="n1" value="${esc(NAMES[0])}" maxlength="14"></label><label>Pemain 2<input id="n2" value="${esc(NAMES[1])}" maxlength="14"></label></div>
+  <div class="stack"><button class="btn pri" data-a="start-bot">Lawan Bot</button><button class="btn" data-a="start-hot">2 Pemain, satu perangkat</button><button class="btn" data-a="guide">Buku Panduan</button></div></div>`;
+}
+
+/* ---------- buku panduan ---------- */
+function guideHTML(){
+  const tab=GUIDE;
+  const tabs=[['buff','Buff'],['attack','Attack'],['defend','Defend'],['art','Artefak'],['rules','Aturan']];
+  let body='';
+  if(['buff','attack','defend'].includes(tab)){
+    body=`<div class="gsec ${tab}"><h2>${ico(tab)}${CAT_LABEL[tab]}</h2><p class="note">${CAT_NOTE[tab]}</p><div class="gcards">`+
+    CFG.cards[tab].map(c=>{
+      let extra='';
+      if(c.dbl)extra+=`<small>Ada versi 2 kartu: ${c.d2}</small>`;
+      if(tab==='attack')extra+=`<small>Speed acak ${CFG.atkSpd[0]}–${CFG.atkSpd[1]}</small>`;
+      if(c.key==='crack')extra+=`<small>Speed acak ${CFG.crackSpd[0]}–${CFG.crackSpd[1]}</small>`;
+      if(c.key==='coin')extra+=`<small>Nilai ${CFG.coins[0]} atau ${CFG.coins[1]}</small>`;
+      return`<div class="gc"><div class="h"><b>${c.name}</b><span class="pc">${c.p}%</span></div><p>${c.d}</p>${extra}</div>`}).join('')+`</div></div>`;
+    if(tab==='defend')body+=`<div class="rules" style="margin-top:14px"><h3>Aturan Defend</h3><ul>
+      <li>Dipasang di giliran sendiri sebelum diserang. Tidak bisa dipasang saat giliran lawan.</li>
+      <li>Ketiga kartu berbagi 1 slot dan tidak bisa menimpa satu sama lain.</li>
+      <li>Mirror: pantulan selalu berhasil, lalu 50% Mirror bertahan. Jika penyerang punya Shield dan menyerang Mirror, pantulan tidak mengenainya.</li>
+      <li>Axe menghancurkan Shield dan Mirror. Terhadap Shield Crack, Axe berhasil hanya jika speed-nya lebih tinggi.</li>
+      <li>Lapisan pertahanan: Antique Shield, lalu slot Defend, lalu pemain.</li></ul></div>`;
+  }else if(tab==='art'){
+    body=`<div class="gsec"><h2 style="color:var(--brass)">Artefak</h2><p class="note">27 jenis, hanya 1 salinan tiap jenis. Harga 100 koin. Slot: 1 pasif (titik merah) dan 1 aktif (titik biru). Yang bertanda ✓ sudah bisa dimainkan di versi ini.</p>
+    <div class="scroll"><table><thead><tr><th>Artefak</th><th>Tipe</th><th>Kemampuan</th><th>Durasi</th><th>Status</th></tr></thead><tbody>`+
+    Object.values(ARTS).map(a=>`<tr><td><b>${a.name}</b></td><td>${a.type==='P'?'Pasif':a.type==='A'?'Aktif':'Hybrid'}</td><td>${a.d}</td><td>${a.dur?a.dur+' ronde':'ikut target'}</td><td class="${a.impl?'ok':'soon'}">${a.impl?'✓ Dimainkan':'Menyusul'}</td></tr>`).join('')+`</tbody></table></div><div class="rules" style="margin-top:14px"><h3>Parasite Cube</h3><ul>
+      <li>Dipakai sebagai satu aksi, sekali per ronde. Kedua pemain dipaksa menaruh kartu spesial yang sama banyak ke dalam kotak, paling banyak 3 tiap pemain. Jika musuh hanya punya 2, taruhan jadi 2, dan seterusnya.</li>
+      <li>Kartu taruhan diambil acak dari tangan masing-masing pemain.</li>
+      <li>Pemilik cube menang: mengambil semua kartu di kotak.</li>
+      <li>Pemilik cube kalah: musuh mengambil 4 kartu acak (taruhan 3), 2 kartu (taruhan 2), atau 1 kartu (taruhan 1). Sisanya kembali ke pemilik cube.</li>
+      <li>Ronde draw: semua kartu kembali ke pemilik asalnya.</li></ul></div></div>`;
+  }else{
+    body=`<div class="rules"><h3>Tujuan</h3><p>Jumlah kartu nomor sedekat mungkin ke 21. Melewati 21 tidak otomatis kalah. Jarak sama berarti draw. Skor 8 lebih dulu menang.</p>
+    <h3>Deck</h3><p>21 kartu unik: angka 1–18 dan 3 Bintang (nilai 0). Dikocok ulang tiap ronde. Tiap pemain punya 8 slot; slot kiri adalah kartu utama (tertutup).</p>
+    <h3>Giliran</h3><ul><li>Dalam satu giliran bebas melakukan aksi sebanyak apa pun: minta kartu, kartu spesial, artefak aktif.</li><li>Giliran selesai dengan tombol Clear.</li><li>Aksi apa pun mereset hitungan Clear ke 0, lalu Clear di giliran itu dihitung 1. Clear ketiga beruntun (gabungan kedua pemain) mengakhiri ronde.</li></ul>
+    <h3>Penentu pemenang</h3><ul><li>1. Tebakan Mirror yang benar.</li><li>2. Auto-win Bintang: 2 Bintang di slot dan total semua kartu di bawah 10.</li><li>3. Jarak ke 21.</li></ul>
+    <h3>Kartu spesial</h3><p>Tiap pemain menerima 5 kartu di ronde 1, 4, 7, 10, dan seterusnya. Bobot kategori: Buff 40%, Attack 35%, Defend 25%.</p>
+    <h3>Skor 7:7</h3><p>Kedua pemain dapat 10 kartu spesial dan memilih 1 dari 3 artefak gratis. Pemenang ronde berikutnya menang game.</p></div>`;
+  }
+  return`<div class="guide"><div class="in"><div class="top"><div class="t">BUKU <span>PANDUAN</span></div><button class="btn sm" data-a="guide-close">Tutup</button></div>
+  <div class="tabs">${tabs.map(([k,l])=>`<button data-a="tab" data-k="${k}" aria-pressed="${k===tab}">${l}</button>`).join('')}</div>${body}</div></div>`;
+}
+
+function render(){
+  const app=$('#app');
+  const y=window.scrollY;
+  app.innerHTML=(G?boardHTML():menuHTML())+(G&&G.modal?modalHTML():'')+(GUIDE?guideHTML():'');
+  if(GUIDE)document.documentElement.style.overflow='hidden';else document.documentElement.style.overflow='';
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-a]');if(!b||b.disabled)return;
+  const a=b.dataset.a;
+  if(a==='start-bot'||a==='start-hot'){NAMES=[$('#n1')?.value||NAMES[0],$('#n2')?.value||NAMES[1]];newGame(a==='start-bot'?'bot':'hot');return}
+  if(a==='guide'){GUIDE='buff';render();return}
+  if(a==='guide-close'){GUIDE=null;render();return}
+  if(a==='tab'){GUIDE=b.dataset.k;render();return}
+  if(a==='menu'){GID++;G=null;render();return}
+  if(!G)return;
+  if(a==='opt'){const m=G.modal;if(!m)return;const i=+b.dataset.i;G.modal=null;render();m.res(i<0?null:m.options[i].value);return}
+  if(!canAct()||G.cur!==G.view)return;
+  if(a==='draw')act(()=>drawAction(G.cur));
+  else if(a==='clear')pressClear(),render();
+  else if(a==='sp')act(()=>useSpecial(G.cur,+b.dataset.uid));
+  else if(a==='art')act(()=>useArtifact(G.cur,b.dataset.slot));
+});
+document.addEventListener('input',e=>{if(e.target.id==='n1')NAMES[0]=e.target.value;if(e.target.id==='n2')NAMES[1]=e.target.value});
+render();
+</script>
+
+</body></html>
